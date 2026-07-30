@@ -10,6 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+
     // Register
     public function register(Request $request)
     {
@@ -52,10 +53,13 @@ class AuthController extends Controller
 
         $token = $user->createToken('api-token')->plainTextToken;
 
+        $status = $user->is_active ? 200 : 403;
+
         return response()->json([
             'message' => 'Login successful',
             'token' => $token,
-            'user' => $user
+            'user' => $user,
+            'status' => $status
         ]);
     }
 
