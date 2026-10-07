@@ -45,22 +45,35 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
+        // Invalid credentials
         if (! $user || ! Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['Invalid credentials.'],
-            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid credentials.',
+                'data' => null,
+            ], 401);
         }
+
+        // Inactive user
+        // if (! $user->is_active) {
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Your account is inactive. Please contact the administrator.',
+        //         'data' => null,
+        //     ], 403);
+        // }
 
         $token = $user->createToken('api-token')->plainTextToken;
 
-        $status = $user->is_active ? 200 : 403;
-
+        // Success
         return response()->json([
-            'message' => 'Login successful',
-            'token' => $token,
-            'user' => $user,
-            'status' => $status
-        ]);
+            'success' => true,
+            'message' => 'Login successful.',
+            'data' => [
+                'token' => $token,
+                'user' => $user,
+            ],
+        ], 200);
     }
 
     // Logout
