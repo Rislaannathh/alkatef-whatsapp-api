@@ -10,14 +10,19 @@ class Contact extends Model
     use HasFactory;
 
     protected $fillable = [
-        'category_id',
+        'campaign_id',
+        'company_id',
         'name',
         'country_code',
         'phone',
         'email',
-        'company',
+        'data',
         'status',
-        'notes',
         'created_by',
     ];
+
+    public function campaign()
+    {
+        return $this->belongsTo(Campaign::class);
+    }
 }
