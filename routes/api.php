@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\ContactController;
 use Illuminate\Http\Request;
@@ -25,5 +26,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // contact
     Route::apiResource('contacts', ContactController::class);
+
+    // campaign setup (single-submission endpoint)
+    Route::post('/campaigns/setup', [CampaignController::class, 'setup']);
+
+    // campaign contact-import status (read-only polling endpoint)
+    Route::get('/campaigns/{campaign_id}/contact-import-status', [CampaignController::class, 'contactImportStatus']);
 
 });
