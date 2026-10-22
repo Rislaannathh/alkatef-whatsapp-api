@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ListCampaignsRequest;
 use App\Http\Requests\SetupCampaignRequest;
+use App\Http\Resources\CampaignDetailResource;
+use App\Http\Resources\CampaignResource;
 use App\Jobs\ImportCampaignContacts;
 use App\Models\Campaign;
 use App\Models\ContactImportStatus;
@@ -16,6 +19,105 @@ use Throwable;
 
 class CampaignController extends Controller
 {
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/campaigns
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Return a paginated list of campaigns belonging to the authenticated
+     * user's company.
+     *
+     * Supports optional filtering by name (search) and status.
+     * Company-level isolation is always enforced server-side.
+     */
+    public function index(ListCampaignsRequest $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = $request->user();
+
+        $perPage = (int) ($request->input('per_page', 15));
+
+        if (empty($user->company_id)) {
+            return response()->json([
+                'success'    => true,
+                'message'    => 'Campaigns retrieved successfully.',
+                'data'       => [],
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page'     => $perPage,
+                    'total'        => 0,
+                    'last_page'    => 1,
+                ],
+            ]);
+        }
+
+        $campaigns = Campaign::query()
+            ->where('company_id', $user->company_id)
+            ->with(['template.templateCategory'])
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $query->where('name', 'like', '%' . $request->input('search') . '%');
+            })
+            ->when($request->filled('status'), function ($query) use ($request) {
+                $query->where('status', $request->input('status'));
+            })
+            ->latest()
+            ->paginate($perPage);
+
+        return response()->json([
+            'success'    => true,
+            'message'    => 'Campaigns retrieved successfully.',
+            'data'       => CampaignResource::collection($campaigns),
+            'pagination' => [
+                'current_page' => $campaigns->currentPage(),
+                'per_page'     => $campaigns->perPage(),
+                'total'        => $campaigns->total(),
+                'last_page'    => $campaigns->lastPage(),
+            ],
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/campaigns/{campaign_id}
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Return the full details of a single campaign.
+     *
+     * Authorization: the campaign must belong to the authenticated user's
+     * company.  A 404 is returned when the campaign does not exist OR belongs
+     * to a different company — never leaking cross-company data.
+     */
+    public function show(string|int $campaignId): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = auth()->user();
+
+        if (empty($user->company_id) || ! is_numeric($campaignId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found.',
+            ], 404);
+        }
+
+        $campaign = Campaign::where('id', (int) $campaignId)
+            ->where('company_id', $user->company_id)
+            ->with(['template.templateCategory', 'contactImportStatus'])
+            ->first();
+
+        if ($campaign === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Campaign retrieved successfully.',
+            'data'    => new CampaignDetailResource($campaign),
+        ]);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // POST /api/campaigns/setup
     // ─────────────────────────────────────────────────────────────────────────
@@ -209,12 +311,19 @@ class CampaignController extends Controller
      * company.  A user cannot access another company's campaign or import
      * status.  No contact PII is exposed in this response.
      */
-    public function contactImportStatus(int $campaignId): JsonResponse
+    public function contactImportStatus(string|int $campaignId): JsonResponse
     {
         /** @var \App\Models\User $user */
         $user = auth()->user();
 
-        $campaign = Campaign::where('id', $campaignId)
+        if (empty($user->company_id) || ! is_numeric($campaignId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Campaign not found.',
+            ], 404);
+        }
+
+        $campaign = Campaign::where('id', (int) $campaignId)
             ->where('company_id', $user->company_id)
             ->first();
 

@@ -36,4 +36,21 @@ class Template extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    /**
+     * The category this template belongs to.
+     *
+     * Note: the FK column is named 'category' (not 'category_id') because the
+     * migration used `foreignId('category')`.  We pass the column name explicitly
+     * so Eloquent resolves the relation correctly.
+     *
+     * The method is intentionally named 'templateCategory' (not 'category') to
+     * avoid a name collision with the 'category' column in $fillable — if the
+     * method shares its name with a plain column Eloquent's attribute accessor
+     * wins, making eager-loading impossible.
+     */
+    public function templateCategory(): BelongsTo
+    {
+        return $this->belongsTo(Category::class, 'category');
+    }
 }
