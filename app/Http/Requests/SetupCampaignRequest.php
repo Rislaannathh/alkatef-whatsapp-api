@@ -33,6 +33,9 @@ class SetupCampaignRequest extends FormRequest
             'template.button'               => ['nullable', 'string', 'max:150'],
             'template.button_action_type'   => ['nullable', 'string', 'in:url,phone,quick_reply'],
             'template.button_value'         => ['nullable', 'string'],
+            'template.button_two'               => ['nullable', 'string', 'max:150'],
+            'template.button_two_action_type'   => ['nullable', 'string', 'in:url,phone,quick_reply'],
+            'template.button_two_value'         => ['nullable', 'string'],
             'template.status'               => ['nullable', 'string', 'in:draft,pending,approved,rejected,inactive'],
 
             // ── Campaign ──────────────────────────────────────────────────────

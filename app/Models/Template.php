@@ -24,6 +24,9 @@ class Template extends Model
         'button',
         'button_action_type',
         'button_value',
+        'button_two',
+        'button_two_action_type',
+        'button_two_value',
         'status',
     ];
 
