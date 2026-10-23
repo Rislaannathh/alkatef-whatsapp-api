@@ -136,17 +136,45 @@ class CampaignController extends Controller
         $companyId = $user->company_id;
         $userId    = $user->id;
 
-        $templateData = $request->input('template');
-        $campaignData = $request->input('campaign');
-        $inputType    = $request->contactInputType();
+        $templateData   = $request->input('template');
+        $campaignData   = $request->input('campaign');
+        $inputType      = $request->contactInputType();
+        $importBehavior = $request->importBehavior();
 
         // Store the uploaded file BEFORE the transaction so we have a path to
         // reference in the dispatched job.  The file is stored in the private
         // disk (storage/app/private) which is not publicly accessible.
         $storedFilePath = null;
         if ($inputType === 'file') {
-            $storedFilePath = $request->file('contacts_file')
-                ->store('contact-imports', 'local');
+
+            //File upload option setup for import contacts
+            $file = $request->file('contacts_file');
+
+            if (! $file || ! $file->isValid()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The uploaded contacts file is missing or invalid.',
+                ], 422);
+            }
+
+            $storedFilePath = $file->store('contact-imports', 'local');
+
+            if ($storedFilePath === false) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to store the uploaded file.',
+                ], 500);
+            }
+
+            Log::info('Campaign contact file stored', [
+                'path' => $storedFilePath,
+                'disk_root' => config('filesystems.disks.local.root'),
+                'absolute_path' => Storage::disk('local')->path($storedFilePath),
+                'exists' => Storage::disk('local')->exists($storedFilePath),
+            ]);
+            // End File upload option setup for import contacts
+
+
 
             if ($storedFilePath === false) {
                 return response()->json([
@@ -157,13 +185,19 @@ class CampaignController extends Controller
         }
 
         // ── Atomic template + campaign + import-status creation ───────────────
-        $template       = null;
-        $campaign       = null;
-        $importStatus   = null;
+        $template     = null;
+        $campaign     = null;
+        $importStatus = null;
 
         try {
             DB::transaction(function () use (
-                $templateData, $campaignData, $companyId, $userId, &$template, &$campaign, &$importStatus
+                $templateData,
+                $campaignData,
+                $companyId,
+                $userId,
+                &$template,
+                &$campaign,
+                &$importStatus
             ) {
                 $template = Template::create([
                     'company_id'          => $companyId,
@@ -183,28 +217,26 @@ class CampaignController extends Controller
                 ]);
 
                 $campaign = Campaign::create([
-                    'company_id'  => $companyId,
-                    'created_by'  => $userId,
-                    'template_id' => $template->id,
-                    'name'        => $campaignData['name'],
-                    'description' => $campaignData['description'] ?? null,
-                    'status'      => 'draft',
-                    'scheduled_at'=> isset($campaignData['scheduled_at'])
-                        ? $campaignData['scheduled_at']
-                        : null,
+                    'company_id'   => $companyId,
+                    'created_by'   => $userId,
+                    'template_id'  => $template->id,
+                    'name'         => $campaignData['name'],
+                    'description'  => $campaignData['description'] ?? null,
+                    'status'       => 'draft',
+                    'scheduled_at' => $campaignData['scheduled_at'] ?? null,
                 ]);
 
                 $importStatus = ContactImportStatus::create([
-                    'campaign_id' => $campaign->id,
-                    'status'      => 'pending',
-                    'total'       => 0,
-                    'inserted'    => 0,
-                    'failed_count'=> 0,
-                    'message'     => 'Contact import is queued and waiting to start.',
+                    'campaign_id'  => $campaign->id,
+                    'status'       => 'pending',
+                    'total'        => 0,
+                    'inserted'     => 0,
+                    'updated'      => 0,
+                    'failed_count' => 0,
+                    'message'      => 'Contact import is queued and waiting to start.',
                 ]);
             });
         } catch (Throwable $e) {
-            // Transaction rolled back — clean up any stored file.
             if ($storedFilePath !== null) {
                 Storage::disk('local')->delete($storedFilePath);
             }
@@ -220,26 +252,24 @@ class CampaignController extends Controller
         }
 
         // ── Dispatch the import job (after commit) ────────────────────────────
-        // Correction #1: if dispatch fails we preserve the already-committed
-        // template, campaign, and import-status but mark the import as failed
-        // immediately and return a response that honestly reflects the failure.
         $dispatchSucceeded = false;
 
         try {
             ImportCampaignContacts::dispatch(
-                importStatusId:     $importStatus->id,
-                campaignId:         $campaign->id,
-                companyId:          $companyId,
-                createdBy:          $userId,
-                type:               $inputType,
-                filePath:           $storedFilePath,
-                contactData:        $inputType === 'single'
+                importStatusId: $importStatus->id,
+                campaignId: $campaign->id,
+                companyId: $companyId,
+                createdBy: $userId,
+                type: $inputType,
+                filePath: $storedFilePath,
+                contactData: $inputType === 'single'
                     ? $request->input('contact')
                     : null,
-                phoneNumbers:       $inputType === 'phone_numbers'
+                phoneNumbers: $inputType === 'phone_numbers'
                     ? $request->input('phone_numbers')
                     : null,
                 defaultCountryCode: $request->input('contact.country_code'),
+                importBehavior: $importBehavior,
             )->afterCommit();
 
             $dispatchSucceeded = true;
@@ -249,7 +279,6 @@ class CampaignController extends Controller
                 'error'       => $e->getMessage(),
             ]);
 
-            // Mark the import as failed so the status endpoint reflects reality.
             DB::table('contact_import_statuses')
                 ->where('id', $importStatus->id)
                 ->update([
@@ -258,7 +287,6 @@ class CampaignController extends Controller
                     'updated_at' => now(),
                 ]);
 
-            // Clean up stored file if dispatch failed.
             if ($storedFilePath !== null) {
                 Storage::disk('local')->delete($storedFilePath);
             }
@@ -267,16 +295,18 @@ class CampaignController extends Controller
         $statusUrl = "/api/campaigns/{$campaign->id}/contact-import-status";
 
         if (! $dispatchSucceeded) {
-            // The template and campaign were saved; the import was not queued.
             return response()->json([
-                'success'    => true,
-                'message'    => 'Campaign created, but contact import could not be queued.',
-                'template_id'=> $template->id,
-                'campaign_id'=> $campaign->id,
-                'contact_import' => [
+                'success'         => true,
+                'message'         => 'Campaign created, but contact import could not be queued.',
+                'template_id'     => $template->id,
+                'campaign_id'     => $campaign->id,
+                'import_method'   => $request->input('import_method', 'auto'),
+                'import_behavior' => $importBehavior,
+                'contact_import'  => [
                     'status'     => 'failed',
                     'total'      => 0,
                     'inserted'   => 0,
+                    'updated'    => 0,
                     'failed'     => 0,
                     'message'    => 'Contact import could not be queued. Please retry.',
                     'status_url' => $statusUrl,
@@ -285,14 +315,17 @@ class CampaignController extends Controller
         }
 
         return response()->json([
-            'success'     => true,
-            'message'     => 'Campaign created successfully. Contact import has started.',
-            'template_id' => $template->id,
-            'campaign_id' => $campaign->id,
-            'contact_import' => [
+            'success'         => true,
+            'message'         => 'Campaign created successfully. Contact import has started.',
+            'template_id'     => $template->id,
+            'campaign_id'     => $campaign->id,
+            'import_method'   => $request->input('import_method', 'auto'),
+            'import_behavior' => $importBehavior,
+            'contact_import'  => [
                 'status'     => 'pending',
                 'total'      => 0,
                 'inserted'   => 0,
+                'updated'    => 0,
                 'failed'     => 0,
                 'message'    => 'Contact import is queued and waiting to start.',
                 'status_url' => $statusUrl,
@@ -308,8 +341,7 @@ class CampaignController extends Controller
      * Return the current contact-import status for a campaign.
      *
      * Authorization: the campaign must belong to the authenticated user's
-     * company.  A user cannot access another company's campaign or import
-     * status.  No contact PII is exposed in this response.
+     * company.  No contact PII is exposed in this response.
      */
     public function contactImportStatus(string|int $campaignId): JsonResponse
     {
@@ -344,12 +376,13 @@ class CampaignController extends Controller
         }
 
         return response()->json([
-            'success'    => true,
-            'campaign_id'=> $campaignId,
+            'success'     => true,
+            'campaign_id' => $campaignId,
             'contact_import' => [
                 'status'   => $importStatus->status,
                 'total'    => $importStatus->total,
                 'inserted' => $importStatus->inserted,
+                'updated'  => $importStatus->updated,
                 'failed'   => $importStatus->failed_count,
                 'message'  => $importStatus->message,
             ],

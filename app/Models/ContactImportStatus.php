@@ -15,6 +15,7 @@ class ContactImportStatus extends Model
         'status',
         'total',
         'inserted',
+        'updated',
         'failed_count',
         'last_processed_row',
         'message',
