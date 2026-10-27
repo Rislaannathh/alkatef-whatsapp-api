@@ -17,6 +17,18 @@ class SetupCampaignRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $template = $this->input('template');
+        if (is_array($template) && isset($template['button']) && is_string($template['button'])) {
+            $decoded = json_decode($template['button'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $template['button'] = $decoded;
+                $this->merge(['template' => $template]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -30,12 +42,7 @@ class SetupCampaignRequest extends FormRequest
             'template.header'               => ['nullable', 'string'],
             'template.body'                 => ['nullable', 'string'],
             'template.footer'               => ['nullable', 'string'],
-            'template.button'               => ['nullable', 'string', 'max:150'],
-            'template.button_action_type'   => ['nullable', 'string', 'in:url,phone,quick_reply'],
-            'template.button_value'         => ['nullable', 'string'],
-            'template.button_two'               => ['nullable', 'string', 'max:150'],
-            'template.button_two_action_type'   => ['nullable', 'string', 'in:url,phone,quick_reply'],
-            'template.button_two_value'         => ['nullable', 'string'],
+            'template.button'               => ['nullable', 'array'],
             'template.status'               => ['nullable', 'string', 'in:draft,pending,approved,rejected,inactive'],
 
             // ── Campaign ──────────────────────────────────────────────────────

@@ -39,6 +39,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/campaigns/{campaign_id}/contact-import-status', [CampaignController::class, 'contactImportStatus']);
 
     // templates
-    Route::get('/templates', [TemplateController::class, 'index']);
+    Route::apiResource('templates', TemplateController::class);
 
 });

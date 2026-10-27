@@ -211,11 +211,6 @@ class CampaignController extends Controller
                     'body'                => $templateData['body'] ?? null,
                     'footer'              => $templateData['footer'] ?? null,
                     'button'              => $templateData['button'] ?? null,
-                    'button_action_type'  => $templateData['button_action_type'] ?? null,
-                    'button_value'        => $templateData['button_value'] ?? null,
-                    'button_two'              => $templateData['button_two'] ?? null,
-                    'button_two_action_type'  => $templateData['button_two_action_type'] ?? null,
-                    'button_two_value'        => $templateData['button_two_value'] ?? null,
                     'status'              => $templateData['status'] ?? 'draft',
                 ]);
 
