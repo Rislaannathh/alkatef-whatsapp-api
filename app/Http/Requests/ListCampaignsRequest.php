@@ -23,6 +23,7 @@ class ListCampaignsRequest extends FormRequest
             'search'   => ['nullable', 'string', 'max:150'],
             'status'   => ['nullable', 'string', 'in:draft,scheduled,running,paused,completed,cancelled,failed'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'filter'   => ['nullable', 'string', 'in:least_failed'],
         ];
     }
 

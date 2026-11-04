@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\ContactController;
+use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\TemplateController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +38,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // campaign contact-import status (read-only polling endpoint)
     Route::get('/campaigns/{campaign_id}/contact-import-status', [CampaignController::class, 'contactImportStatus']);
+
+    // analytics
+    Route::get('/analytics', [AnalyticsController::class, 'index']);
 
     // templates
     Route::apiResource('templates', TemplateController::class);

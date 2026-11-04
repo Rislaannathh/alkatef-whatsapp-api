@@ -29,6 +29,10 @@ class CampaignController extends Controller
      *
      * Supports optional filtering by name (search) and status.
      * Company-level isolation is always enforced server-side.
+     *
+     * When `filter=least_failed` is provided the response contains the 5
+     * campaigns with the lowest failed_count (ascending), and pagination is
+     * omitted in favour of a plain array.
      */
     public function index(ListCampaignsRequest $request): JsonResponse
     {
@@ -51,7 +55,9 @@ class CampaignController extends Controller
             ]);
         }
 
-        $campaigns = Campaign::query()
+        $isLeastFailed = $request->input('filter') === 'least_failed';
+
+        $baseQuery = Campaign::query()
             ->where('company_id', $user->company_id)
             ->with(['template.templateCategory'])
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -59,7 +65,25 @@ class CampaignController extends Controller
             })
             ->when($request->filled('status'), function ($query) use ($request) {
                 $query->where('status', $request->input('status'));
-            })
+            });
+
+        // ── least_failed shortlist (top-5, no pagination) ─────────────────────
+        if ($isLeastFailed) {
+            $campaigns = $baseQuery
+                ->orderBy('failed_count', 'asc')
+                ->limit(5)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Campaigns retrieved successfully.',
+                'filter'  => 'least_failed',
+                'data'    => CampaignResource::collection($campaigns),
+            ]);
+        }
+
+        // ── Default paginated listing ─────────────────────────────────────────
+        $campaigns = $baseQuery
             ->latest()
             ->paginate($perPage);
 
