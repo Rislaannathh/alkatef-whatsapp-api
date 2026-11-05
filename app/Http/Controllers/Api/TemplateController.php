@@ -96,6 +96,11 @@ class TemplateController extends Controller
         $validated['company_id'] = $user->company_id;
         $validated['created_by'] = $user->id;
 
+        // Check if a file was uploaded, store it, and save the path to $validated
+        if ($request->hasFile('media')) {
+            $validated['media'] = $request->file('media')->store('templates', 'public');
+        }
+
         $template = Template::create($validated);
         $template->load('templateCategory');
 
