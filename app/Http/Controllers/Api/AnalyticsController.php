@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\AnalyticsRequest;
 use App\Models\Campaign;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class AnalyticsController extends Controller
@@ -127,6 +128,109 @@ class AnalyticsController extends Controller
                     'average_ctr'   => $averageCtr,      // percentage
                 ],
             ],
+        ]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // GET /api/analytics/category-engagement
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Return per-category engagement metrics for the authenticated user's company.
+     *
+     * Each category entry includes:
+     *   - Aggregate summary (total_campaigns, total_sent, total_delivered,
+     *     total_read, delivery_rate, read_rate)
+     *   - A `campaigns` array listing every individual campaign in that category
+     *
+     * Campaigns whose template or template's category is NULL are excluded because
+     * they cannot be assigned to any category.
+     */
+    public function categoryEngagement(Request $request): JsonResponse
+    {
+        /** @var \App\Models\User $user */
+        $user = $request->user();
+
+        // Guard: user must belong to a company.
+        if (empty($user->company_id)) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Category engagement retrieved successfully.',
+                'data'    => [],
+            ]);
+        }
+
+        // ── Load all qualifying campaigns in one query ────────────────────────
+        // Eager-load template → templateCategory so we can group in PHP.
+        // whereHas ensures only campaigns with a template that has a category
+        // are included (mirrors the INNER JOIN behaviour of the previous query).
+        $campaigns = Campaign::query()
+            ->where('company_id', $user->company_id)
+            ->whereHas('template.templateCategory')
+            ->with(['template.templateCategory'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // ── Group campaigns by category ───────────────────────────────────────
+        $grouped = $campaigns->groupBy(
+            fn (Campaign $c) => $c->template->templateCategory->id
+        );
+
+        // ── Build response per category ───────────────────────────────────────
+        $data = $grouped->map(function ($categoryCampaigns) {
+            /** @var \App\Models\Category $cat */
+            $cat = $categoryCampaigns->first()->template->templateCategory;
+
+            $totalSent      = (int) $categoryCampaigns->sum('sent_count');
+            $totalDelivered = (int) $categoryCampaigns->sum('delivered_count');
+            $totalRead      = (int) $categoryCampaigns->sum('read_count');
+
+            // Division-by-zero guards
+            $deliveryRate = $totalSent > 0
+                ? round(($totalDelivered / $totalSent) * 100, 2)
+                : 0.0;
+
+            $readRate = $totalDelivered > 0
+                ? round(($totalRead / $totalDelivered) * 100, 2)
+                : 0.0;
+
+            // Individual campaign details
+            $campaignList = $categoryCampaigns->map(fn (Campaign $c) => [
+                'id'               => $c->id,
+                'name'             => $c->name,
+                'description'      => $c->description,
+                'status'           => $c->status,
+                'scheduled_at'     => $c->scheduled_at?->toIso8601String(),
+                'started_at'       => $c->started_at?->toIso8601String(),
+                'completed_at'     => $c->completed_at?->toIso8601String(),
+                'total_recipients' => $c->total_recipients,
+                'sent_count'       => $c->sent_count,
+                'delivered_count'  => $c->delivered_count,
+                'read_count'       => $c->read_count,
+                'failed_count'     => $c->failed_count,
+                'created_at'       => $c->created_at?->toIso8601String(),
+            ])->values()->all();
+
+            return [
+                'category_id'     => $cat->id,
+                'category_name'   => $cat->name,
+                'total_campaigns' => $categoryCampaigns->count(),
+                'total_sent'      => $totalSent,
+                'total_delivered' => $totalDelivered,
+                'total_read'      => $totalRead,
+                'delivery_rate'   => $deliveryRate,
+                'read_rate'       => $readRate,
+                'campaigns'       => $campaignList,
+            ];
+        })
+        ->sortBy('category_name')
+        ->values()
+        ->all();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Category engagement retrieved successfully.',
+            'data'    => $data,
         ]);
     }
 

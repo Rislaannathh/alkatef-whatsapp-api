@@ -41,6 +41,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // analytics
     Route::get('/analytics', [AnalyticsController::class, 'index']);
+    Route::get('/analytics/category-engagement', [AnalyticsController::class, 'categoryEngagement']);
 
     // templates
     Route::apiResource('templates', TemplateController::class);
