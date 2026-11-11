@@ -12,6 +12,7 @@ use App\Models\Campaign;
 use App\Models\ContactImportStatus;
 use App\Models\Template;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -197,14 +198,38 @@ class CampaignController extends Controller
                 'exists' => Storage::disk('local')->exists($storedFilePath),
             ]);
             // End File upload option setup for import contacts
+        }
 
+        // Store uploaded template media (if any)
+        $storedTemplateMedia = null;
+        $mediaFile = $request->templateMediaFile();
 
+        if ($mediaFile instanceof UploadedFile && $mediaFile->isValid()) {
+            $storedTemplateMedia = $mediaFile->store('templates', 'public');
 
-            if ($storedFilePath === false) {
+            if ($storedTemplateMedia === false) {
+                if ($storedFilePath !== null) {
+                    Storage::disk('local')->delete($storedFilePath);
+                }
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to store the uploaded file. Please try again.',
+                    'message' => 'Failed to store the uploaded template media.',
                 ], 500);
+            }
+
+            $templateData['media'] = $storedTemplateMedia;
+
+            // Auto-detect media_type if not supplied
+            if (empty($templateData['media_type'])) {
+                $ext = strtolower($mediaFile->getClientOriginalExtension());
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], true)) {
+                    $templateData['media_type'] = 'image';
+                } elseif (in_array($ext, ['mp4', '3gp', 'mov', 'mkv', 'avi'], true)) {
+                    $templateData['media_type'] = 'video';
+                } else {
+                    $templateData['media_type'] = 'document';
+                }
             }
         }
 
@@ -261,6 +286,9 @@ class CampaignController extends Controller
         } catch (Throwable $e) {
             if ($storedFilePath !== null) {
                 Storage::disk('local')->delete($storedFilePath);
+            }
+            if ($storedTemplateMedia !== null) {
+                Storage::disk('public')->delete($storedTemplateMedia);
             }
 
             Log::error('CampaignController@setup: transaction failed.', [

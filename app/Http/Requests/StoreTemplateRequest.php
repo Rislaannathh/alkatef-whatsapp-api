@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\MediaFileOrString;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -42,7 +43,7 @@ class StoreTemplateRequest extends FormRequest
             'language' => ['nullable', 'string', 'max:20'],
             'category' => ['nullable', 'integer', 'exists:categories,id'],
             'media_type' => ['nullable', 'string', 'in:image,video,document'],
-            'media' => ['nullable', 'string', 'max:1000'],
+            'media' => ['nullable', new MediaFileOrString('media_type')],
             'header' => ['nullable', 'string'],
             'body' => ['nullable', 'string'],
             'footer' => ['nullable', 'string'],

@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\MediaFileOrString;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\UploadedFile;
 
 class SetupCampaignRequest extends FormRequest
 {
@@ -20,12 +22,38 @@ class SetupCampaignRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $template = $this->input('template');
+        if (is_string($template)) {
+            $decoded = json_decode($template, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $template = $decoded;
+            }
+        }
+
         if (is_array($template) && isset($template['button']) && is_string($template['button'])) {
             $decoded = json_decode($template['button'], true);
             if (json_last_error() === JSON_ERROR_NONE) {
                 $template['button'] = $decoded;
-                $this->merge(['template' => $template]);
             }
+        }
+
+        $campaign = $this->input('campaign');
+        if (is_string($campaign)) {
+            $decoded = json_decode($campaign, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $this->merge(['campaign' => $decoded]);
+            }
+        }
+
+        $mediaFile = $this->templateMediaFile();
+        if ($mediaFile) {
+            if (! is_array($template)) {
+                $template = [];
+            }
+            $template['media'] = $mediaFile;
+        }
+
+        if (is_array($template)) {
+            $this->merge(['template' => $template]);
         }
     }
 
@@ -38,7 +66,7 @@ class SetupCampaignRequest extends FormRequest
             'template.language'             => ['nullable', 'string', 'max:20'],
             'template.category'             => ['nullable', 'integer', 'exists:categories,id'],
             'template.media_type'           => ['nullable', 'string', 'in:image,video,document'],
-            'template.media'                => ['nullable', 'string', 'max:1000'],
+            'template.media'                => ['nullable', new MediaFileOrString('template.media_type')],
             'template.header'               => ['nullable', 'string'],
             'template.body'                 => ['nullable', 'string'],
             'template.footer'               => ['nullable', 'string'],
@@ -207,6 +235,21 @@ class SetupCampaignRequest extends FormRequest
     public function importBehavior(): string
     {
         return $this->input('import_behavior', 'add_only');
+    }
+
+    /**
+     * Return the uploaded template media file if present in the request.
+     */
+    public function templateMediaFile(): ?UploadedFile
+    {
+        $media = data_get($this->all(), 'template.media');
+        if ($media instanceof UploadedFile) {
+            return $media;
+        }
+
+        return $this->file('template.media')
+            ?? $this->file('template_media')
+            ?? $this->file('media');
     }
 
     /**

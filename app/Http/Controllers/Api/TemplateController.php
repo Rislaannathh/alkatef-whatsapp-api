@@ -10,6 +10,7 @@ use App\Http\Resources\TemplateResource;
 use App\Models\Template;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class TemplateController extends Controller
 {
@@ -98,7 +99,18 @@ class TemplateController extends Controller
 
         // Check if a file was uploaded, store it, and save the path to $validated
         if ($request->hasFile('media')) {
-            $validated['media'] = $request->file('media')->store('templates', 'public');
+            $file = $request->file('media');
+            $validated['media'] = $file->store('templates', 'public');
+            if (empty($validated['media_type'])) {
+                $ext = strtolower($file->getClientOriginalExtension());
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], true)) {
+                    $validated['media_type'] = 'image';
+                } elseif (in_array($ext, ['mp4', '3gp', 'mov', 'mkv', 'avi'], true)) {
+                    $validated['media_type'] = 'video';
+                } else {
+                    $validated['media_type'] = 'document';
+                }
+            }
         }
 
         $template = Template::create($validated);
@@ -179,7 +191,28 @@ class TemplateController extends Controller
             ], 404);
         }
 
-        $template->update($request->validated());
+        $validated = $request->validated();
+
+        if ($request->hasFile('media')) {
+            if (! empty($template->media) && Storage::disk('public')->exists($template->media)) {
+                Storage::disk('public')->delete($template->media);
+            }
+
+            $file = $request->file('media');
+            $validated['media'] = $file->store('templates', 'public');
+            if (empty($validated['media_type'])) {
+                $ext = strtolower($file->getClientOriginalExtension());
+                if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'], true)) {
+                    $validated['media_type'] = 'image';
+                } elseif (in_array($ext, ['mp4', '3gp', 'mov', 'mkv', 'avi'], true)) {
+                    $validated['media_type'] = 'video';
+                } else {
+                    $validated['media_type'] = 'document';
+                }
+            }
+        }
+
+        $template->update($validated);
         $template->load('templateCategory');
 
         return response()->json([
@@ -217,6 +250,10 @@ class TemplateController extends Controller
                 'success' => false,
                 'message' => 'Template not found.',
             ], 404);
+        }
+
+        if (! empty($template->media) && Storage::disk('public')->exists($template->media)) {
+            Storage::disk('public')->delete($template->media);
         }
 
         $template->delete();
